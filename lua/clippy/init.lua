@@ -113,7 +113,7 @@ function M.clippy()
 				}
 
 				-- Create async system command
-				vim.notify("Running clippy...", vim.diagnostic.levels.INFO)
+				vim.notify("Running clippy...", vim.log.levels.INFO)
 				vim.system(
 					vim.list_extend({ "cargo" }, args),
 					{
