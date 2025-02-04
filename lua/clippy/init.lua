@@ -11,9 +11,11 @@ local defaults = {
 		-- NOTE that clippy rules can be configured as "warn" but the JSON value is "warning"
 		warning = vim.diagnostic.severity.WARN,
 		info = vim.diagnostic.severity.INFO,
+		help = vim.diagnostic.severity.INFO,
+		-- 'note' level is ignored because it's meta info from clippy, e.g. "needless_lifetimes is enabled by default"
 	},
 	-- Default severity if not specified
-	default_severity = vim.diagnostic.severity.WARN,
+	default_severity = vim.diagnostic.severity.INFO,
 	-- Additional semgrep CLI arguments
 	extra_args = {},
 }
@@ -22,15 +24,15 @@ M.config = vim.deepcopy(defaults)
 
 -- Debug function to print current config.
 function M.print_config()
-    local config_lines = {"Current clippy.nvim configuration:"}
-    for k, v in pairs(M.config) do
-        if type(v) == "table" then
-            table.insert(config_lines, string.format("%s: %s", k, vim.inspect(v)))
-        else
-            table.insert(config_lines, string.format("%s: %s", k, tostring(v)))
-        end
-    end
-    vim.notify(table.concat(config_lines, "\n"), vim.log.levels.INFO)
+	local config_lines = { "Current clippy.nvim configuration:" }
+	for k, v in pairs(M.config) do
+		if type(v) == "table" then
+			table.insert(config_lines, string.format("%s: %s", k, vim.inspect(v)))
+		else
+			table.insert(config_lines, string.format("%s: %s", k, tostring(v)))
+		end
+	end
+	vim.notify(table.concat(config_lines, "\n"), vim.log.levels.INFO)
 end
 
 -- Function to toggle the plugin. Clears current diagnostics.
@@ -64,6 +66,10 @@ end
 -- 	end
 -- 	return config
 -- end
+
+local function is_valid_diagnostic(parsed)
+    return parsed.message and parsed.message.spans ~= nil and #parsed.message.spans > 0
+end
 
 -- Run semgrep and populate diagnostics with the results.
 function M.clippy()
@@ -113,7 +119,8 @@ function M.clippy()
 				}
 
 				-- Create async system command
-				vim.notify("Running clippy...", vim.log.levels.INFO)
+				-- NOTE: debugging
+				vim.notify("Running clippy from " .. vim.fn.getcwd(), vim.log.levels.INFO)
 				vim.system(
 					vim.list_extend({ "cargo" }, args),
 					{
@@ -124,25 +131,20 @@ function M.clippy()
 					function(obj)
 						local diags = {}
 						-- Clippy's JSON output contains one JSON object per new-line
-						local lines = vim.split(obj.stdout, "\n")
-						for _, line in ipairs(lines) do
+						for line in obj.stdout:gmatch("[^\n]+") do -- More efficient than vim.split
 							-- Parse JSON output
 							local ok, parsed = pcall(vim.json.decode, line)
-							-- if ok and parsed and parsed.message then
-							if ok and parsed
-								and parsed.message
-								-- filter out other compiler messages
-								and parsed.message["$message_type"] == "diagnostic"
-								-- this should only happen in unusual cases, e.g. a clippy rule has been renamed and we are invoking the old one
-								and not parsed.message.spans == nil then
 
-								-- Map clippy's severities to the onces used by diagnostics
-								local severity = M.config.default_severity
-								if parsed.message.level then
-									severity = M.config.severity_map
-									    [parsed.message.level] or
-									    M.config.default_severity
-								end
+							if ok and is_valid_diagnostic(parsed) then
+							    -- and parsed.message
+							    -- -- filter out other compiler messages
+							    -- -- and parsed.message["$message_type"] == "diagnostic"
+							    -- -- this should only happen in unusual cases, e.g. a clippy rule has been renamed and we are invoking the old one
+							    -- and not parsed.message["spans"] == nil then
+								-- Map clippy's severities to the ones used by diagnostics
+								local severity = parsed.message.level and
+								M.config.severity_map[parsed.message.level] or
+								M.config.default_severity
 
 								-- Convert results to diagnostics
 								local diag = {
@@ -155,7 +157,7 @@ function M.clippy()
 									-- Clippy rule name like clippy:integer_division
 									source = parsed.message.code.code,
 									-- Rule warning and URL
-									message = parsed.message.children[1].message,
+									message = parsed.message.message,
 									severity = severity,
 								}
 								table.insert(diags, diag)
