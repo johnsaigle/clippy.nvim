@@ -15,7 +15,7 @@ local defaults = {
 		-- 'note' level is ignored because it's meta info from clippy, e.g. "needless_lifetimes is enabled by default"
 	},
 	-- Default severity if not specified
-	default_severity = vim.diagnostic.severity.INFO,
+	default_severity = vim.diagnostic.severity.WARN,
 	-- Additional semgrep CLI arguments
 	extra_args = {},
 }
@@ -59,7 +59,8 @@ function M.toggle()
 	end
 end
 
--- Helper function to convert semgrep_config to a table if it's a string
+-- TODO uncomment and create a function for this plugin
+-- Helper function to convert the config to a table if it's a string
 -- local function normalize_config(config)
 -- 	if type(config) == "string" then
 -- 		return { config }
@@ -67,8 +68,21 @@ end
 -- 	return config
 -- end
 
-local function is_valid_diagnostic(parsed)
-    return parsed.message and parsed.message.spans ~= nil and #parsed.message.spans > 0
+local function matches_filename(parsed, bufname)
+	local pattern = vim.pesc(parsed.message.spans[1].file_name) .. "$"
+	print("Pattern:", pattern)
+	print("Bufname:", bufname)
+	print("Match result:", bufname:match(pattern) ~= nil)
+	return bufname:match(pattern) ~= nil
+end
+
+local function is_valid_diagnostic(parsed, bufname)
+	return parsed.message
+	    -- Ensure that the clippy warning has line and column information in its `span` result so that we can highlight the appropriate line using diagnostics
+	    and parsed.message.spans ~= nil
+	    and #parsed.message.spans > 0
+	    -- Only print diagnostics for the currently opened file
+	    and matches_filename(parsed, bufname)
 end
 
 -- Run semgrep and populate diagnostics with the results.
@@ -118,9 +132,11 @@ function M.clippy()
 					"--all-targets",
 				}
 
-				-- Create async system command
 				-- NOTE: debugging
-				vim.notify("Running clippy from " .. vim.fn.getcwd(), vim.log.levels.INFO)
+				-- vim.notify("Running clippy from " .. vim.fn.getcwd(), vim.log.levels.INFO)
+
+				local bufname = vim.api.nvim_buf_get_name(params.bufnr)
+				-- Create async system command
 				vim.system(
 					vim.list_extend({ "cargo" }, args),
 					{
@@ -131,22 +147,15 @@ function M.clippy()
 					function(obj)
 						local diags = {}
 						-- Clippy's JSON output contains one JSON object per new-line
-						for line in obj.stdout:gmatch("[^\n]+") do -- More efficient than vim.split
-							-- Parse JSON output
+						for line in obj.stdout:gmatch("[^\n]+") do
 							local ok, parsed = pcall(vim.json.decode, line)
 
-							if ok and is_valid_diagnostic(parsed) then
-							    -- and parsed.message
-							    -- -- filter out other compiler messages
-							    -- -- and parsed.message["$message_type"] == "diagnostic"
-							    -- -- this should only happen in unusual cases, e.g. a clippy rule has been renamed and we are invoking the old one
-							    -- and not parsed.message["spans"] == nil then
-								-- Map clippy's severities to the ones used by diagnostics
+							if ok and is_valid_diagnostic(parsed, bufname) then
 								local severity = parsed.message.level and
-								M.config.severity_map[parsed.message.level] or
-								M.config.default_severity
+								    M.config.severity_map[parsed.message.level] or
+								    M.config.default_severity
 
-								-- Convert results to diagnostics
+								-- Convert results to diagnostics. Assume the first span entry has the info we need.
 								local diag = {
 									-- Lines must be offset by 1
 									lnum = parsed.message.spans[1].line_start - 1,
