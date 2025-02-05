@@ -7,6 +7,7 @@ local defaults = {
 	-- Enable the plugin by default
 	enabled = true,
 	severity_map = {
+		forbid = vim.diagnostic.severity.ERROR,
 		deny = vim.diagnostic.severity.ERROR,
 		-- NOTE that clippy rules can be configured as "warn" but the JSON value is "warning"
 		warning = vim.diagnostic.severity.WARN,
