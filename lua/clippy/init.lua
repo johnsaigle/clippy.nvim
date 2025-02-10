@@ -73,7 +73,7 @@ local function matches_filename(parsed, bufname)
 	local pattern = vim.pesc(parsed.message.spans[1].file_name) .. "$"
 	print("Pattern:", pattern)
 	print("Bufname:", bufname)
-	print("Match result:", bufname:match(pattern) ~= nil)
+	-- print("Match result:", bufname:match(pattern) ~= nil)
 	return bufname:match(pattern) ~= nil
 end
 
