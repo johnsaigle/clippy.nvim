@@ -133,10 +133,19 @@ function M.clippy()
 				-- NOTE: debugging
 				-- vim.notify("Running clippy from " .. vim.fn.getcwd(), vim.log.levels.INFO)
 
+
+				-- Create async system command
+				local full_cmd = vim.list_extend({ cmd }, args)
+
+				-- TODO check nil when creating the file handle
+				local f = io.open("/tmp/clippy-nvim.log", "a")
+				f:write(vim.inspect(vim.fn.join(full_cmd, " ")) .. "\n")
+				f:close()
+
 				local bufname = vim.api.nvim_buf_get_name(params.bufnr)
 				-- Create async system command
 				vim.system(
-					vim.list_extend({ "cargo" }, args),
+					full_cmd,
 					{
 						text = true,
 						cwd = vim.fn.getcwd(),
@@ -155,19 +164,23 @@ function M.clippy()
 
 								-- Convert results to diagnostics. Assume the first span entry has the info we need.
 								local diag = {
-									-- Lines must be offset by 1
+									-- Lines and columns are decremented by 1 because Lua has 1-based indexing
 									lnum = parsed.message.spans[1].line_start - 1,
-									col = parsed.message.spans[1].column_start,
-									-- Lines must be offset by 1
+									col = parsed.message.spans[1].column_start - 1,
 									end_lnum = parsed.message.spans[1].line_end - 1,
-									end_col = parsed.message.spans[1].column_end,
+									end_col = parsed.message.spans[1].column_end - 1,
 									-- Clippy rule name like clippy:integer_division
 									source = parsed.message.code.code,
-									-- Rule warning and URL
+									-- Rule message details, including URL
 									message = parsed.message.message,
 									severity = severity,
 								}
 								table.insert(diags, diag)
+							else
+								-- Log error info
+								f = io.open("/tmp/clippy-nvim.log", "a")
+								f:write(line .. "\n")
+								f:close()
 							end
 						end
 						-- Schedule the diagnostic updates
