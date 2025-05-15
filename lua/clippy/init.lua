@@ -12,7 +12,7 @@ local defaults = {
 		-- NOTE that clippy rules can be configured as "warn" but the JSON value is "warning"
 		warning = vim.diagnostic.severity.WARN,
 		info = vim.diagnostic.severity.INFO,
-		help = vim.diagnostic.severity.INFO,
+		help = vim.diagnostic.severity.HINT,
 		-- 'note' level is ignored because it's meta info from clippy, e.g. "needless_lifetimes is enabled by default"
 	},
 	-- Default severity if not specified
@@ -36,6 +36,20 @@ function M.print_config()
 	vim.notify(table.concat(config_lines, "\n"), vim.log.levels.INFO)
 end
 
+function M.clear_diagnostics()
+	if not namespace then
+		namespace = vim.api.nvim_create_namespace("clippy")
+	end
+
+	-- Get all buffers
+	local bufs = vim.api.nvim_list_bufs()
+	for _, buf in ipairs(bufs) do
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.diagnostic.reset(namespace, buf)
+		end
+	end
+end
+
 -- Function to toggle the plugin. Clears current diagnostics.
 function M.toggle()
 	if not namespace then
@@ -46,13 +60,7 @@ function M.toggle()
 	M.config.enabled = not M.config.enabled
 	if not M.config.enabled then
 		-- Clear all diagnostics when disabling
-		-- Get all buffers
-		local bufs = vim.api.nvim_list_bufs()
-		for _, buf in ipairs(bufs) do
-			if vim.api.nvim_buf_is_valid(buf) then
-				vim.diagnostic.reset(namespace, buf)
-			end
-		end
+		M.clear_diagnostics()
 		vim.notify("Clippy diagnostics disabled", vim.log.levels.INFO)
 	else
 		vim.notify("Clippy diagnostics enabled", vim.log.levels.INFO)
@@ -79,6 +87,8 @@ local function is_valid_diagnostic(parsed, bufname)
 	    -- Ensure that the clippy warning has line and column information in its `span` result so that we can highlight the appropriate line using diagnostics
 	    and parsed.message.spans ~= nil
 	    and #parsed.message.spans > 0
+	    and parsed.message.code ~= nil
+	    -- and parsed.message.code.code ~= nil
 	    -- Only print diagnostics for the currently opened file
 	    and matches_filename(parsed, bufname)
 end
@@ -91,6 +101,9 @@ function M.clippy()
 		vim.notify("null-ls is required for clippy.nvim", vim.log.levels.ERROR)
 		return
 	end
+
+	-- Refresh diagnostics
+	M.clear_diagnostics()
 
 	local clippy_generator = {
 		method = null_ls.methods.DIAGNOSTICS,
@@ -169,12 +182,15 @@ function M.clippy()
 									col = parsed.message.spans[1].column_start - 1,
 									end_lnum = parsed.message.spans[1].line_end - 1,
 									end_col = parsed.message.spans[1].column_end - 1,
-									-- Clippy rule name like clippy:integer_division
-									source = parsed.message.code.code,
 									-- Rule message details, including URL
 									message = parsed.message.message,
 									severity = severity,
 								}
+								if parsed.message.code ~= nil then
+									-- Clippy rule name like `clippy:integer_division`
+									diag.source = parsed.message.code.code
+								end
+
 								table.insert(diags, diag)
 							else
 								-- Log error info
