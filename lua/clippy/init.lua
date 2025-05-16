@@ -188,7 +188,9 @@ function M.clippy()
 								}
 								if parsed.message.code ~= nil then
 									-- Clippy rule name like `clippy:integer_division`
-									diag.source = parsed.message.code.code
+									if type(parsed.message.code) == "table" then
+										diag.source = parsed.message.code.code
+									end
 								end
 
 								table.insert(diags, diag)
@@ -196,7 +198,7 @@ function M.clippy()
 								-- Log error info
 								f = io.open("/tmp/clippy-nvim.log", "a")
 								f:write(line .. "\n")
-								f:close()
+							f:close()
 							end
 						end
 						-- Schedule the diagnostic updates
